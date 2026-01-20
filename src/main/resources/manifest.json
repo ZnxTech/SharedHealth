@@ -1,0 +1,19 @@
+{
+  "Group": "ZnxTech",
+  "Name": "SharedHealth",
+  "Version": "1.0.0",
+  "Description": "a shared health system in Hytale",
+  "Authors": [
+    {
+      "Name": "ZnxTech",
+      "Email": "znxtech@proton.me",
+      "Url": "https://github.com/znxtech"
+    }
+  ],
+  "Website": "https://github.com/znxtech/SharedHealth",
+  "Main": "com.znxtech.sharedhealth.SharedHealth",
+  "ServerVersion": "*",
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "DisabledByDefault": false
+}
