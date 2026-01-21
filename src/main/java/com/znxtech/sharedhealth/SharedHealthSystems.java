@@ -192,7 +192,10 @@ public class SharedHealthSystems {
         PlayerRef playerRef = event.getPlayerRef();
         float baseMaxHealth = baseMaxHealths.get(playerRef.getUuid());
         maxSharedHealth -= baseMaxHealth;
-        if (curSharedHealth > maxSharedHealth) curSharedHealth = maxSharedHealth;
+        if (curSharedHealth > maxSharedHealth) {
+            changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) - (curSharedHealth - maxSharedHealth));
+            curSharedHealth = maxSharedHealth;
+        }
         baseMaxHealths.remove(playerRef.getUuid());
         changeHealths.remove(playerRef.getUuid());
         syncHealthBesides(playerRef.getUuid());
