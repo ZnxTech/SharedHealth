@@ -128,7 +128,7 @@ public class SharedHealthSystems {
     private static float getBaseMaxHealth(EntityStatValue health) {
         StaticModifier modifier = (StaticModifier)health.getModifier(MODIFIER_KEY);
         float multiplier = getHealthMultiplier(health);
-        return ((health.getMax() / multiplier) - (modifier != null ? modifier.getAmount() : 0.0f)) * multiplier;
+        return health.getMax() - (modifier != null ? modifier.getAmount() : 0.0f) * multiplier;
     }
 
     private static float getAddDiffNeeded(EntityStatValue health) {
