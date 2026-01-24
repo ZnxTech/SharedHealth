@@ -1,8 +1,8 @@
 package com.znxtech.sharedhealth;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
 
 import javax.annotation.Nonnull;
@@ -28,15 +28,16 @@ import com.hypixel.hytale.server.core.modules.entitystats.modifier.Modifier.Modi
 import com.hypixel.hytale.server.core.modules.entitystats.modifier.StaticModifier.CalculationType;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 public class SharedHealthSystems {
 
     private static final String MODIFIER_KEY = "Znxtech_SharedHealth_HealthModifier";
-    private static final HashMap<UUID, Float> baseMaxHealths = new HashMap<UUID, Float>();
-    private static final HashMap<UUID, Float> changeHealths = new HashMap<UUID, Float>();
-    private static float maxSharedHealth = 0.0f;
-    private static float curSharedHealth = 0.0f;
+    private static final ConcurrentHashMap<UUID, Float> baseMaxHealths = new ConcurrentHashMap<UUID, Float>();
+    private static final ConcurrentHashMap<UUID, Float> changeHealths = new ConcurrentHashMap<UUID, Float>();
+    private static LockedFloat maxSharedHealth = new LockedFloat(0.0f);
+    private static LockedFloat curSharedHealth = new LockedFloat(0.0f);
 
     private static void announceMaxHealthChange(float diff, String name) {
         if (diff < 0) {
@@ -78,9 +79,9 @@ public class SharedHealthSystems {
             Message.raw("SharedHealth").bold(true).color("#cc0000"),
             Message.raw("]").bold(true).color("#800000"),
             Message.raw(": Total Shared Health is Now at "),
-            Message.raw(Float.toString(curSharedHealth) + "/" + Float.toString(maxSharedHealth) + "HP").bold(true)
+            Message.raw(Float.toString(curSharedHealth.get()) + "/" + Float.toString(maxSharedHealth.get()) + "HP").bold(true)
         );
-        SharedHealth.LOGGER.atInfo().log("Total Shared Health is Now at " + Float.toString(curSharedHealth) + "/" + Float.toString(maxSharedHealth) + "HP");
+        SharedHealth.LOGGER.atInfo().log("Total Shared Health is Now at " + Float.toString(curSharedHealth.get()) + "/" + Float.toString(maxSharedHealth.get()) + "HP");
         Universe.get().sendMessage(message);
     }
 
@@ -133,44 +134,52 @@ public class SharedHealthSystems {
 
     private static float getAddDiffNeeded(EntityStatValue health) {
         float multiplier = getHealthMultiplier(health);
-        return (maxSharedHealth - getBaseMaxHealth(health)) / multiplier;
+        return (maxSharedHealth.get() - getBaseMaxHealth(health)) / multiplier;
     }
 
     private static void syncHealth() {
-        for (PlayerRef playerRef : Universe.get().getPlayers()) {
-            Ref<EntityStore> ref = playerRef.getReference();
-            EntityStatMap stats = ref.getStore().getComponent(ref, EntityStatMap.getComponentType());
-            EntityStatValue health = stats.get(DefaultEntityStatTypes.getHealth());
+        for (World world : Universe.get().getWorlds().values()) {
+            world.execute(() -> {
+                for (PlayerRef playerRef : world.getPlayerRefs()) {
+                    Ref<EntityStore> ref = playerRef.getReference();
+                    EntityStatMap stats = ref.getStore().getComponent(ref, EntityStatMap.getComponentType());
+                    EntityStatValue health = stats.get(DefaultEntityStatTypes.getHealth());
 
-            StaticModifier modifier = new StaticModifier(
-                ModifierTarget.MAX, CalculationType.ADDITIVE, getAddDiffNeeded(health)
-            );
+                    StaticModifier modifier = new StaticModifier(
+                        ModifierTarget.MAX, CalculationType.ADDITIVE, getAddDiffNeeded(health)
+                    );
 
-            float change = curSharedHealth - health.get();
-            changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) + change);
-            stats.putModifier(DefaultEntityStatTypes.getHealth(), MODIFIER_KEY, modifier);
-            stats.setStatValue(DefaultEntityStatTypes.getHealth(), curSharedHealth);
-            stats.update();
+                    float change = curSharedHealth.get() - health.get();
+                    changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) + change);
+                    stats.putModifier(DefaultEntityStatTypes.getHealth(), MODIFIER_KEY, modifier);
+                    stats.setStatValue(DefaultEntityStatTypes.getHealth(), curSharedHealth.get());
+                    stats.update();
+                }
+            });
         }
     }
 
     private static void syncHealthBesides(UUID uuid) {
-        for (PlayerRef playerRef : Universe.get().getPlayers()) {
-            if (playerRef.getUuid().equals(uuid)) continue;
+        for (World world : Universe.get().getWorlds().values()) {
+            world.execute(() -> {
+                for (PlayerRef playerRef : world.getPlayerRefs()) {
+                    if (playerRef.getUuid().equals(uuid)) continue;
 
-            Ref<EntityStore> ref = playerRef.getReference();
-            EntityStatMap stats = ref.getStore().getComponent(ref, EntityStatMap.getComponentType());
-            EntityStatValue health = stats.get(DefaultEntityStatTypes.getHealth());
+                    Ref<EntityStore> ref = playerRef.getReference();
+                    EntityStatMap stats = ref.getStore().getComponent(ref, EntityStatMap.getComponentType());
+                    EntityStatValue health = stats.get(DefaultEntityStatTypes.getHealth());
 
-            StaticModifier modifier = new StaticModifier(
-                ModifierTarget.MAX, CalculationType.ADDITIVE, getAddDiffNeeded(health)
-            );
+                    StaticModifier modifier = new StaticModifier(
+                        ModifierTarget.MAX, CalculationType.ADDITIVE, getAddDiffNeeded(health)
+                    );
 
-            float change = curSharedHealth - health.get();
-            changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) + change);
-            stats.putModifier(DefaultEntityStatTypes.getHealth(), MODIFIER_KEY, modifier);
-            stats.setStatValue(DefaultEntityStatTypes.getHealth(), curSharedHealth);
-            stats.update();
+                    float change = curSharedHealth.get() - health.get();
+                    changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) + change);
+                    stats.putModifier(DefaultEntityStatTypes.getHealth(), MODIFIER_KEY, modifier);
+                    stats.setStatValue(DefaultEntityStatTypes.getHealth(), curSharedHealth.get());
+                    stats.update();
+                }
+            });
         }
     }
 
@@ -180,8 +189,8 @@ public class SharedHealthSystems {
         EntityStatMap stats = ref.getStore().getComponent(ref, EntityStatMap.getComponentType());
         EntityStatValue health = stats.get(DefaultEntityStatTypes.getHealth());
         float baseMaxHealth = health != null ? getBaseMaxHealth(health) : 0.0f;
-        maxSharedHealth += baseMaxHealth;
-        curSharedHealth += baseMaxHealth;
+        maxSharedHealth.change(baseMaxHealth);
+        curSharedHealth.change(baseMaxHealth);
         baseMaxHealths.put(playerRef.getUuid(), baseMaxHealth);
         changeHealths.put(playerRef.getUuid(), health.get());
         syncHealth();
@@ -191,9 +200,9 @@ public class SharedHealthSystems {
     public static void onPlayerDisconnect(@Nonnull PlayerDisconnectEvent event) {
         PlayerRef playerRef = event.getPlayerRef();
         float baseMaxHealth = baseMaxHealths.get(playerRef.getUuid());
-        maxSharedHealth -= baseMaxHealth;
-        if (curSharedHealth > maxSharedHealth) {
-            changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) - (curSharedHealth - maxSharedHealth));
+        maxSharedHealth.change(-baseMaxHealth);
+        if (curSharedHealth.get() > maxSharedHealth.get()) {
+            changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) - (curSharedHealth.get() - maxSharedHealth.get()));
             curSharedHealth = maxSharedHealth;
         }
         baseMaxHealths.remove(playerRef.getUuid());
@@ -222,9 +231,9 @@ public class SharedHealthSystems {
             float baseHealth = getBaseMaxHealth(health);
             if (baseHealth != baseMaxHealths.get(playerRef.getUuid())) {
                 float diff = baseHealth - baseMaxHealths.get(playerRef.getUuid());
-                maxSharedHealth += diff;
-                if (curSharedHealth > maxSharedHealth) {
-                    changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) - (curSharedHealth - maxSharedHealth));
+                maxSharedHealth.change(diff);
+                if (curSharedHealth.get() > maxSharedHealth.get()) {
+                    changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) - (curSharedHealth.get() - maxSharedHealth.get()));
                     curSharedHealth = maxSharedHealth;
                 }
                 baseMaxHealths.put(playerRef.getUuid(), baseHealth);
@@ -235,8 +244,9 @@ public class SharedHealthSystems {
             // Shared healing handling
             if (health.get() != changeHealths.get(playerRef.getUuid())) {
                 float diff = health.get() - changeHealths.get(playerRef.getUuid());
-                curSharedHealth += diff;
-                if (curSharedHealth > maxSharedHealth) curSharedHealth = maxSharedHealth;
+                curSharedHealth.change(diff);
+                if (curSharedHealth.get() > maxSharedHealth.get()) 
+                    curSharedHealth.set(maxSharedHealth.get());
                 changeHealths.put(playerRef.getUuid(), health.get());
                 syncHealthBesides(playerRef.getUuid());
                 announceCurHealthHeal(diff, playerRef.getUsername());
@@ -269,10 +279,11 @@ public class SharedHealthSystems {
             
             Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
             PlayerRef playerRef = store.getComponent(ref, PlayerRef.getComponentType());
-            curSharedHealth -= event.getAmount();
+            curSharedHealth.change(-event.getAmount());
             changeHealths.put(playerRef.getUuid(), changeHealths.get(playerRef.getUuid()) - event.getAmount());
             syncHealthBesides(playerRef.getUuid());
-            if (curSharedHealth < 0.0f) curSharedHealth = maxSharedHealth;
+            if (curSharedHealth.get() < 0.0f)
+                curSharedHealth.set(maxSharedHealth.get());
             announceCurHealthDamage(event.getAmount(), playerRef.getUsername());
         }
 
